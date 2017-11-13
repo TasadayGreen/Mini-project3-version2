@@ -1,6 +1,6 @@
 ---
 title: "miniproject_3"
-author: "Tasaday Green"
+author: "Emma King and Tasaday Green"
 date: "11/13/2017"
 output: html_document
 ---
@@ -8,4 +8,5 @@ output: html_document
 ```{r}
 library(mdsr)
 library(RMySQL)
+db <- dbConnect_scidb(dbname = "imdb")
 ```
