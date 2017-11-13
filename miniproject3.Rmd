@@ -1,0 +1,11 @@
+---
+title: "miniproject_3"
+author: "Tasaday Green"
+date: "11/13/2017"
+output: html_document
+---
+
+```{r}
+library(mdsr)
+library(RMySQL)
+```
