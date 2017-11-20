@@ -188,7 +188,8 @@ test8 %>%
   group_by(link_type_id, first_sequel) %>%
   summarise(N = n()) %>%
   ggplot(aes(x = first_sequel, y = N, color = link_type_id)) +
-  geom_line()
+  geom_point() +
+  geom_smooth()
 ```
 
 ```{r}
