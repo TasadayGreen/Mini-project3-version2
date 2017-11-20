@@ -1,0 +1,199 @@
+---
+title: "MP3_Draft"
+author: "Emma King"
+date: "November 19, 2017"
+output: html_document
+---
+
+
+```{r}
+library(mdsr)
+library(RMySQL)
+db <- dbConnect_scidb(dbname = "imdb")
+```
+
+```{r}
+test <- db %>%
+  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
+	   t1.id AS original_id, t2.id AS sequel_id, 
+       t1.title AS original, t2.title AS sequel,
+       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
+       t1.production_year AS year1, min(t2.production_year) AS first_sequel,
+       min(t2.production_year) - t1.production_year AS time_diff
+FROM movie_link AS ml
+JOIN title AS t1
+ON ml.movie_id = t1.id 
+JOIN title AS t2
+ON ml.linked_movie_id = t2.id
+WHERE ml.link_type_id = 2
+AND t1.kind_id = 1
+AND t2.kind_id = 1
+GROUP BY original_id
+ORDER BY time_diff;
+")
+```
+
+```{r}
+test1 <- db %>%
+  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
+	   t1.id AS original_id, t2.id AS sequel_id, 
+       t1.title AS original, t2.title AS sequel,
+       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
+       t1.production_year AS year1, min(t2.production_year) AS first_sequel
+FROM movie_link AS ml
+JOIN title AS t1
+ON ml.movie_id = t1.id 
+JOIN title AS t2
+ON ml.linked_movie_id = t2.id
+WHERE ml.link_type_id = 2
+AND t1.kind_id = 1
+AND t2.kind_id = 1
+GROUP BY sequel_id;
+")
+```
+
+```{r}
+test2 <- test1 %>%
+  group_by(original_id, original, year1) %>%
+  summarise(firstsql = min(first_sequel)) %>%
+  mutate(time_diff = firstsql - year1)
+```
+
+```{r}
+test5 <- test %>%
+  group_by(year1) %>%
+  summarise(avg_td = mean(time_diff))
+```
+
+```{r}
+test6 <- test2 %>%
+  group_by(firstsql) %>%
+  summarise(avg_td = mean(time_diff))
+```
+
+## Are there more sequels in recent years? (count)
+
+```{r}
+test1 %>%
+  mutate(tempgap = first_sequel - year1) %>%
+  filter(tempgap > 0, first_sequel < 2018) %>%
+  group_by(first_sequel) %>%
+  summarise(N = n()) %>%
+  ggplot(aes(x = first_sequel, y = N)) +
+  geom_point()
+```
+
+
+## Are sequels happening faster?
+
+#### Average time difference between original movie and sequel by production year of the sequel
+
+```{r}
+ggplot(test6, aes(x = firstsql, y = avg_td)) +
+  geom_point()
+```
+
+#### Average time difference between original movie and sequel by production year of the original year
+
+```{r}
+ggplot(test5, aes(x = year1, y = avg_td)) +
+  geom_point()
+```
+
+
+## Are sequels occuring faster
+
+#### Time difference between a novie and it's sequel by year of the original movie's production year
+
+```{r}
+ggplot(test2, aes(x = year1, y = time_diff)) +
+  geom_point(alpha = 0.2)
+```
+
+#### Time difference between a sequel and the original movie by the production year of the sequel
+
+```{r}
+ggplot(test2, aes(x = firstsql, y = time_diff)) +
+  geom_point(alpha = 0.2)
+```
+
+
+## Remakes
+
+```{r}
+db %>%
+  dbGetQuery("SELECT *
+             FROM link_type")
+```
+
+```{r}
+test7 <- db %>%
+  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
+	   t1.id AS original_id, t2.id AS sequel_id, 
+       t1.title AS original, t2.title AS sequel,
+       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
+       t1.production_year AS year1, min(t2.production_year) AS first_sequel
+FROM movie_link AS ml
+JOIN title AS t1
+ON ml.movie_id = t1.id 
+JOIN title AS t2
+ON ml.linked_movie_id = t2.id
+WHERE ml.link_type_id IN (2, 4, 8, 12)
+AND t1.kind_id = 1
+AND t2.kind_id = 1
+GROUP BY sequel_id;
+")
+
+test7$link_type_id <- as.character(test7$link_type_id)
+```
+
+### In Hollywood
+
+```{r}
+test8 <- db %>%
+  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
+	   t1.id AS original_id, t2.id AS sequel_id, 
+       t1.title AS original, t2.title AS sequel,
+       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
+       t1.production_year AS year1, min(t2.production_year) AS first_sequel,
+       cn.id AS cn_id, cn.country_code, mc.company_id, mc.movie_id AS mc_id
+FROM movie_link AS ml
+JOIN title AS t1
+ON ml.movie_id = t1.id 
+JOIN title AS t2
+ON ml.linked_movie_id = t2.id
+JOIN movie_companies AS mc
+ON ml.movie_id = mc.movie_id
+JOIN company_name AS cn
+ON cn.id = mc.company_id
+WHERE cn.country_code = '[us]'
+AND ml.link_type_id IN (2, 4, 8, 12)
+AND t1.kind_id = 1
+AND t2.kind_id = 1
+GROUP BY sequel_id") 
+
+test8$link_type_id <- as.character(test8$link_type_id)
+```
+
+```{r}
+test8 %>%
+  mutate(tempgap = first_sequel - year1) %>%
+  filter(tempgap > 0, first_sequel < 2018) %>%
+  group_by(link_type_id, first_sequel) %>%
+  summarise(N = n()) %>%
+  ggplot(aes(x = first_sequel, y = N, color = link_type_id)) +
+  geom_line()
+```
+
+```{r}
+test7 %>%
+  mutate(tempgap = first_sequel - year1) %>%
+  filter(tempgap > 0, first_sequel < 2018) %>%
+  group_by(link_type_id, first_sequel) %>%
+  summarise(N = n()) %>%
+  ggplot(aes(x = first_sequel, y = N, color = link_type_id)) +
+  geom_line()
+```
+
+
+
