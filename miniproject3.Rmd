@@ -4,201 +4,273 @@ author: "Emma King and Tasaday Green"
 date: "11/13/2017"
 output: html_document
 ---
----
-title: "MP3_Draft"
-author: "Emma King"
-date: "November 19, 2017"
-output: html_document
----
 
-
-```{r}
+```{r, echo=FALSE, include=FALSE}
 library(mdsr)
 library(RMySQL)
 db <- dbConnect_scidb(dbname = "imdb")
-```
 
-```{r}
-test <- db %>%
-  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
-	   t1.id AS original_id, t2.id AS sequel_id, 
-       t1.title AS original, t2.title AS sequel,
-       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
-       t1.production_year AS year1, min(t2.production_year) AS first_sequel,
-       min(t2.production_year) - t1.production_year AS time_diff
-FROM movie_link AS ml
-JOIN title AS t1
-ON ml.movie_id = t1.id 
-JOIN title AS t2
-ON ml.linked_movie_id = t2.id
-WHERE ml.link_type_id = 2
-AND t1.kind_id = 1
-AND t2.kind_id = 1
-GROUP BY original_id
-ORDER BY time_diff;
-")
-```
-
-```{r}
-test1 <- db %>%
-  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
-	   t1.id AS original_id, t2.id AS sequel_id, 
-       t1.title AS original, t2.title AS sequel,
-       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
-       t1.production_year AS year1, min(t2.production_year) AS first_sequel
-FROM movie_link AS ml
-JOIN title AS t1
-ON ml.movie_id = t1.id 
-JOIN title AS t2
-ON ml.linked_movie_id = t2.id
-WHERE ml.link_type_id = 2
-AND t1.kind_id = 1
-AND t2.kind_id = 1
-GROUP BY sequel_id;
-")
-```
-
-```{r}
-test2 <- test1 %>%
-  group_by(original_id, original, year1) %>%
-  summarise(firstsql = min(first_sequel)) %>%
-  mutate(time_diff = firstsql - year1)
-```
-
-```{r}
-test5 <- test %>%
-  group_by(year1) %>%
-  summarise(avg_td = mean(time_diff))
-```
-
-```{r}
-test6 <- test2 %>%
-  group_by(firstsql) %>%
-  summarise(avg_td = mean(time_diff))
-```
-
-## Are there more sequels in recent years? (count)
-
-```{r}
-test1 %>%
-  mutate(tempgap = first_sequel - year1) %>%
-  filter(tempgap > 0, first_sequel < 2018) %>%
-  group_by(first_sequel) %>%
-  summarise(N = n()) %>%
-  ggplot(aes(x = first_sequel, y = N)) +
-  geom_point()
+library(RColorBrewer)
+library(blscrapeR)
 ```
 
 
-## Are sequels happening faster?
-
-#### Average time difference between original movie and sequel by production year of the sequel
-
-```{r}
-ggplot(test6, aes(x = firstsql, y = avg_td)) +
-  geom_point()
+```{r, echo=FALSE}
+mi3 <- db %>%
+  dbGetQuery("SELECT mi3.movie_id, mi3.info_type_id, mi3.info
+             FROM movie_info AS mi3
+             WHERE mi3.info_type_id = 3
+             AND mi3.info LIKE 'Short%'")
 ```
 
-#### Average time difference between original movie and sequel by production year of the original year
-
-```{r}
-ggplot(test5, aes(x = year1, y = avg_td)) +
-  geom_point()
+```{r, echo=FALSE}
+mi_genre <- db %>%
+  dbGetQuery("SELECT mi_g.movie_id, mi_g.info_type_id, mi_g.info
+             FROM movie_info AS mi_g
+             WHERE mi_g.info_type_id = 3;")
 ```
 
-
-## Are sequels occuring faster
-
-#### Time difference between a novie and it's sequel by year of the original movie's production year
-
-```{r}
-ggplot(test2, aes(x = year1, y = time_diff)) +
-  geom_point(alpha = 0.2)
-```
-
-#### Time difference between a sequel and the original movie by the production year of the sequel
-
-```{r}
-ggplot(test2, aes(x = firstsql, y = time_diff)) +
-  geom_point(alpha = 0.2)
-```
-
-
-## Remakes
-
-```{r}
-db %>%
-  dbGetQuery("SELECT *
-             FROM link_type")
-```
-
-```{r}
-test7 <- db %>%
-  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
-	   t1.id AS original_id, t2.id AS sequel_id, 
-       t1.title AS original, t2.title AS sequel,
-       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
-       t1.production_year AS year1, min(t2.production_year) AS first_sequel
-FROM movie_link AS ml
-JOIN title AS t1
-ON ml.movie_id = t1.id 
-JOIN title AS t2
-ON ml.linked_movie_id = t2.id
-WHERE ml.link_type_id IN (2, 4, 8, 12)
-AND t1.kind_id = 1
-AND t2.kind_id = 1
-GROUP BY sequel_id;
-")
-
-test7$link_type_id <- as.character(test7$link_type_id)
-```
-
-### In Hollywood
-
-```{r}
-test8 <- db %>%
-  dbGetQuery("SELECT ml.movie_id, ml.linked_movie_id, ml.link_type_id, 
-	   t1.id AS original_id, t2.id AS sequel_id, 
-       t1.title AS original, t2.title AS sequel,
-       t1.kind_id AS kind_id1, t2.kind_id AS kind_id2,
-       t1.production_year AS year1, min(t2.production_year) AS first_sequel,
-       cn.id AS cn_id, cn.country_code, mc.company_id, mc.movie_id AS mc_id
-FROM movie_link AS ml
-JOIN title AS t1
-ON ml.movie_id = t1.id 
-JOIN title AS t2
-ON ml.linked_movie_id = t2.id
+```{r, echo=FALSE}
+title <- db %>%
+  dbGetQuery("SELECT t.id, t.title, t.kind_id, t.production_year,
+              cn.id AS cn_id, cn.country_code, mc.company_id, mc.movie_id AS mc_id
+FROM title AS t
 JOIN movie_companies AS mc
-ON ml.movie_id = mc.movie_id
+ON t.id = mc.movie_id
 JOIN company_name AS cn
 ON cn.id = mc.company_id
 WHERE cn.country_code = '[us]'
-AND ml.link_type_id IN (2, 4, 8, 12)
-AND t1.kind_id = 1
-AND t2.kind_id = 1
-GROUP BY sequel_id") 
-
-test8$link_type_id <- as.character(test8$link_type_id)
+AND t.kind_id = 1;")
 ```
 
-```{r}
-test8 %>%
-  mutate(tempgap = first_sequel - year1) %>%
-  filter(tempgap > 0, first_sequel < 2018) %>%
-  group_by(link_type_id, first_sequel) %>%
+```{r, echo=FALSE}
+movie_link <- db %>%
+  dbGetQuery("SELECT *
+             FROM movie_link AS ml
+             WHERE ml.link_type_id IN (2, 4, 8)")
+```
+
+```{r, echo=FALSE}
+relative_sequel <- title %>%
+  left_join(movie_link, by = c("id" = "movie_id")) %>%
+  left_join(title, by = c("linked_movie_id" = "id")) %>%
+  select(id, production_year.x, linked_movie_id, production_year.y, link_type_id, title.x, title.y) %>%
+  mutate(linked_movie_data = if_else(is.na(production_year.y) & linked_movie_id > 0, "Not Available", "Available", "No Linked Movie")) %>%
+  filter(!(linked_movie_data == "Not Available")) %>%
+  mutate(tempgap = production_year.y - production_year.x) %>%
+  filter(tempgap > 0 | is.na(tempgap)) %>%
+  left_join(mi3, by = c("id" = "movie_id")) %>%
+  filter(is.na(info))
+```
+
+```{r, echo=FALSE}
+relative_sequel$production_year.y <- ifelse(is.na(relative_sequel$production_year.y), relative_sequel$production_year.x, relative_sequel$production_year.y)
+```
+
+```{r, echo=FALSE}
+relative_sequel$linked_movie_id <- ifelse(is.na(relative_sequel$linked_movie_id), relative_sequel$id, relative_sequel$linked_movie_id)
+```
+
+```{r, echo=FALSE}
+relative_sequel2 <- relative_sequel %>%
+  group_by(linked_movie_id, production_year.y, link_type_id) %>%
+  summarise(production_year.x = min(production_year.x)) %>%
+  group_by(production_year.y, link_type_id) %>%
   summarise(N = n()) %>%
-  ggplot(aes(x = first_sequel, y = N, color = link_type_id)) +
+  mutate(link_type = if_else(link_type_id == 2, true = "sql", false = "rmk_spf", missing = "no_linked_movie")) %>%
+  group_by(production_year.y, link_type) %>%
+  summarise(N = sum(N)) %>%
+  spread(key = link_type, value = N, fill = 0) %>%
+  mutate(total = sql + rmk_spf + no_linked_movie) %>%
+  mutate(percent_sql = 100 * sql / total,
+         percent_rmk_spf = 100 * rmk_spf / total,
+         percent_na = 100 * no_linked_movie / total) %>%
+  select(production_year.y, percent_sql, percent_rmk_spf, percent_na) %>%
+  gather(key = link_type, value = percent, -production_year.y) %>%
+  filter(production_year.y < 2018) 
+```
+
+```
+We know that spoofs are not exclusive between two movies, if there is a spoofed reference to a film, it's counted as a spoof (e.g. Shrek the Third and Charlie's Angels)
+```
+
+```{r, echo=FALSE}
+gross_info <- db %>%
+  dbGetQuery("SELECT movie_id, info_type_id, info AS gross
+FROM movie_info
+WHERE info_type_id = 107
+AND info LIKE '%(USA)%';")
+```
+
+```{r, echo=FALSE}
+budget_info <- db %>%
+  dbGetQuery("SELECT movie_id, info_type_id, info AS budget
+FROM movie_info
+WHERE info_type_id = 105;")
+```
+
+```{r, echo=FALSE}
+film_finance <- relative_sequel %>%
+  filter(link_type_id == 2, production_year.y < 2018) %>%
+  group_by(id, linked_movie_id, production_year.y, title.x, title.y) %>%
+  summarise(production_year.x = min(production_year.x)) %>%
+  left_join(gross_info, by = c("id" = "movie_id")) %>%
+  left_join(gross_info, by = c("linked_movie_id" = "movie_id")) %>%
+  left_join(budget_info, by = c("id" = "movie_id")) %>%
+  left_join(budget_info, by = c("linked_movie_id" = "movie_id")) %>%
+  mutate(gross.x = parse_number(gross.x),
+         gross.y = parse_number(gross.y),
+         budget.x = parse_number(budget.x),
+         budget.y = parse_number(budget.y)) %>%
+  group_by(id, linked_movie_id, production_year.x, production_year.y, title.x, title.y) %>%
+  summarise(gross.x = max(gross.x), gross.y = max(gross.y), budget.x = max(budget.x), budget.y = max(budget.y))
+```
+
+```{r, echo=FALSE}
+film_finance2 <- film_finance %>%
+  group_by(linked_movie_id, production_year.y,title.y) %>%
+  summarise(previous_movie = max(production_year.x), 
+            gross.x = max(gross.x), gross.y = max(gross.y), 
+            budget.x = max(budget.x), budget.y = max(budget.y))
+```
+
+```{r, echo=FALSE, include=FALSE}
+inflation <- inflation_adjust(2017) %>%
+  select(year, adj_value)
+
+  inflation$year <- as.numeric(inflation$year)
+```
+
+```{r, echo=FALSE}
+relative_sequel_genre <- relative_sequel %>%
+  left_join(mi_genre, by = c("linked_movie_id" = "movie_id")) %>%
+  group_by(linked_movie_id, production_year.y, link_type_id, info.y) %>%
+  summarise(production_year.x = min(production_year.x)) %>%
+  group_by(production_year.y, link_type_id, info.y) %>%
+  summarise(N = n()) %>%
+  mutate(link_type = if_else(link_type_id == 2, true = "sql", false = "rmk_spf", missing = "no_linked_movie")) %>%
+  group_by(production_year.y, link_type, info.y) %>%
+  summarise(N = sum(N)) %>%
+  filter(info.y == "Action" | info.y == "Adventure" | info.y == "Comedy" | info.y == "Crime" | info.y == "Drama" | info.y == "Horror" | info.y == "Mystery" | info.y == "Romance" | info.y == "Thriller" | info.y == "War" | info.y == "Western" | info.y == "Fantasy") %>%
+  spread(key = info.y, value = N, fill = 0) %>%
+  mutate(total = Action + Adventure + Comedy + Crime + Drama + Fantasy + Horror + Mystery + Romance + Thriller + War + Western) %>%
+  gather(key = info.y, value = percent, -production_year.y, -link_type, -total) %>%
+  filter(production_year.y < 2018 & production_year.y > 1914)
+```
+
+```{r, echo=FALSE}
+year_totals <- relative_sequel_genre %>%
+  group_by(production_year.y, link_type) %>%
+  summarise(total = mean(total)) %>%
+  group_by(production_year.y) %>%
+  summarise(total = sum(total))
+```
+
+```{r, echo=FALSE}
+relative_sequel_genre <- relative_sequel_genre %>%
+  full_join(year_totals, by = c("production_year.y")) %>%
+  mutate(percent = 100 * percent / total.y)
+```
+
+
+#### I LIKE THIS ONE
+
+```{r, echo=FALSE}
+relative_sequel_genre %>%
+  group_by(production_year.y, link_type) %>%
+  summarise(percent = sum(percent)) %>%
+  ggplot(aes(production_year.y, percent, fill = link_type)) +
+  scale_fill_grey(start = 0.8, end = 0.2,
+                  name = "Movie Type",
+                  labels = c("Original Movie", "Spoof or Remake", "Sequel")) +
+  geom_area() +
+  annotate("rect", xmin = 1941, xmax = 1945, ymin = 0, ymax = 100, alpha = 0.3, fill = "white") +
+  annotate("rect", xmin = 1929, xmax = 1939, ymin = 0, ymax = 100, alpha = 0.3, fill = "white") +
+  labs(x = "Year", y = "Percent of Movies Produced") +
+  annotate("segment", x = 1934, xend = 1956, y = 95, yend = 95) +
+  annotate("text", x = 1970, y = 95, label = "Great Depression") +
+  annotate("segment", x = 1943, xend = 1956, y = 87, yend = 87) +
+  annotate("text", x = 1966, y = 87, label = "World War II")
+```
+
+#### I LIKE THIS ONE
+
+```{r, echo=FALSE}
+relative_sequel_genre %>%
+  filter(link_type == "sql") %>%
+  filter(info.y == "Action" | info.y == "Adventure" | info.y == "Comedy" | info.y == "Crime" | info.y == "Drama" | info.y == "Horror" | info.y == "Mystery" | info.y == "Romance" | info.y == "Thriller" | info.y == "War" | info.y == "Western" | info.y == "Fantasy") %>%
+  ggplot(aes(production_year.y, percent, fill = info.y)) +
+  geom_line() +
+  facet_wrap(~info.y) +
+  annotate("rect", xmin = 1941, xmax = 1945, ymin = 0, ymax = 3, alpha = 0.2) +
+  annotate("rect", xmin = 1929, xmax = 1939, ymin = 0, ymax = 3, alpha = 0.2) +
+  labs(x = "Year", y = "Percent of Movies Produced (Sequels)")
+```
+
+#### I like this one!
+
+```{r, echo=FALSE}
+film_finance2 %>%
+  full_join(inflation, by = c("production_year.y" = "year")) %>%
+  full_join(inflation, by = c("previous_movie" = "year")) %>%
+  mutate(gross.x = gross.x / adj_value.x,
+         gross.y = gross.y / adj_value.y,
+         budget.x = budget.x / adj_value.x,
+         budget.y = budget.y / adj_value.y) %>%
+  filter(production_year.y > 1947 & production_year.y < 2018) %>%
+  mutate(profit.x = gross.x - budget.x,
+         profit.y = gross.y - budget.y,
+         profitgap = profit.y - profit.x,
+         tempgap = production_year.y - previous_movie) %>%
+  left_join(mi_genre, by = c("linked_movie_id" = "movie_id")) %>%
+  filter(info == "Action" | info == "Adventure" | info == "Comedy" | info == "Crime" | info == "Drama" | info == "Horror" | info == "Mystery" | info == "Romance" | info == "Thriller" | info == "War" | info == "Western" | info == "Fantasy") %>%
+  filter(!(is.na(profitgap))) %>%
+  filter(production_year.y >= 1963) %>%
+  mutate(profit_gain_loss = ifelse(profitgap > 0, "positive", "negative")) %>%
+  group_by(production_year.y, info, profit_gain_loss) %>%
+  summarise(total_genre_profit = sum(profitgap), N_movies = n()) %>%
+  ggplot(aes(production_year.y, N_movies, color = profit_gain_loss)) +
   geom_point() +
-  geom_smooth()
+  geom_smooth(method ="loess", color = "black") +
+  facet_wrap(~info) +
+  theme_dark() +
+  theme(panel.background = element_rect(fill = "grey35")) +
+  labs(x = "Year", y = "Number of Movies") +
+  scale_color_discrete(name = "Profit Difference\nBetween a Movie\nand Its' Sequel",
+                       labels=c("Original > Sequel", "Original < Sequel")) +
+  theme(axis.text.x = element_text(angle=45))
 ```
 
-```{r}
-test7 %>%
-  mutate(tempgap = first_sequel - year1) %>%
-  filter(tempgap > 0, first_sequel < 2018) %>%
-  group_by(link_type_id, first_sequel) %>%
+#### I like this one!
+
+```{r, echo=FALSE}
+relative_sequel %>%
+  filter(link_type_id == 2 | is.na(link_type_id)) %>%
+  filter(production_year.x > 1963 & production_year.x < 2018) %>%
+  select(id, production_year.x, linked_movie_data) %>%
+  group_by(id, production_year.x, linked_movie_data) %>%
   summarise(N = n()) %>%
-  ggplot(aes(x = first_sequel, y = N, color = link_type_id)) +
-  geom_line()
+  left_join(gross_info, by = c("id" = "movie_id")) %>%
+  left_join(budget_info, by = c("id" = "movie_id")) %>%
+  mutate(gross = parse_number(gross),
+         budget = parse_number(budget)) %>%
+  filter(!(is.na(gross) | is.na(budget))) %>%
+  full_join(inflation, by = c("production_year.x" = "year")) %>%
+  mutate(gross = gross / adj_value,
+         budget = budget / adj_value) %>%
+  mutate(profit = gross - budget) %>%
+  left_join(mi_genre, by = c("id" = "movie_id")) %>%
+  filter(info == "Action" | info == "Adventure" | info == "Comedy" | info == "Crime" | info == "Drama" | info == "Horror" | info == "Mystery" | info == "Romance" | info == "Thriller" | info == "War" | info == "Western" | info == "Fantasy") %>%
+  group_by(production_year.x, linked_movie_data, info) %>%
+  summarise(average_gross = mean(gross)) %>%
+  ggplot(aes(production_year.x, average_gross, color = linked_movie_data)) +
+  geom_line() +
+  facet_wrap(~info) +
+  theme_dark() +
+  theme(panel.background = element_rect(fill = "grey35")) +
+  labs(x = "Production Year of Original Film", y = "Average Gross (Adjusted by Inlfation) in US Dollars") +
+  scale_color_discrete(name = "Follow Up Movie?",
+                       labels=c("Has Sequel", "No Sequel")) +
+  theme(axis.text.x = element_text(angle=45))
 ```
 
